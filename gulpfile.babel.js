@@ -21,6 +21,8 @@ const tmpFilesPaths = [
   '.tmp/**/*.html'
 ];
 
+const bs = browserSync.create('Dev server');
+
 const stylesPipe = lazypipe()
   .pipe($.sourcemaps.init)
   .pipe($.less, {
@@ -30,7 +32,7 @@ const stylesPipe = lazypipe()
     browsers: ['> 1%', 'last 2 versions', 'Firefox ESR']
   })
   .pipe($.sourcemaps.write)
-  .pipe(browserSync.stream, {match: '**/*.css'});
+  .pipe(bs.stream, {match: '**/*.css'});
 
 const scriptsPipe = lazypipe()
   .pipe($.rollup, {
@@ -45,7 +47,7 @@ const scriptsPipe = lazypipe()
     ]
   })
   .pipe($.sourcemaps.write)
-  .pipe(browserSync.stream, {match: '**/*.js', once: true});
+  .pipe(bs.stream, {match: '**/*.js', once: true});
 
 gulp.task('modules', () => {
   return gulp.src(srcFilesPaths)
@@ -58,7 +60,7 @@ gulp.task('modules', () => {
     .pipe(gulp.dest('.tmp'));
 });
 
-gulp.task('templates', ['modules'], () => {
+gulp.task('templates', () => {
   let modules = gulp.src(tmpFilesPaths, {read: false});
   let bowerFiles = gulp.src(mainBowerFiles(), {read: false});
 
@@ -69,7 +71,12 @@ gulp.task('templates', ['modules'], () => {
     .pipe($.twig())
     .pipe($.inject(modules, {ignorePath: '.tmp'}))
     .pipe($.inject(bowerFiles, {name: 'bower'}))
-    .pipe(gulp.dest('.tmp'));
+    .pipe(gulp.dest('.tmp'))
+    .pipe(bs.stream({once: true}));
+});
+
+gulp.task('prepare', ['modules'], () => {
+  return gulp.start('templates');
 });
 
 gulp.task('html', ['templates'], () => {
@@ -123,8 +130,8 @@ gulp.task('nodemon', (cb) => {
   }).once('start', cb);
 });
 
-gulp.task('serve', ['nodemon', 'templates', 'fonts'], () => {
-  browserSync({
+gulp.task('serve', ['nodemon', 'prepare', 'fonts'], () => {
+  bs.init({
     notify: false,
     open: false,
     port: 9000,
@@ -143,7 +150,7 @@ gulp.task('serve', ['nodemon', 'templates', 'fonts'], () => {
 });
 
 gulp.task('serve:dist', () => {
-  browserSync({
+  bs.init({
     notify: false,
     port: 9000,
     server: {
