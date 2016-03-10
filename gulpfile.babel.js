@@ -64,7 +64,7 @@ gulp.task('templates', () => {
   let modules = gulp.src(tmpFilesPaths, {read: false});
   let bowerFiles = gulp.src(mainBowerFiles(), {read: false});
 
-  return gulp.src('app/pages/**/*.html')
+  return gulp.src('app/pages/**/*.twig')
     .pipe($.plumber())
     .pipe($.changed('.tmp'))
     .pipe($.debug())
@@ -144,7 +144,7 @@ gulp.task('serve', ['nodemon', 'prepare', 'fonts'], () => {
     }
   });
 
-  gulp.watch(['app/**/*.html', 'bower.json'], ['templates']);
+  gulp.watch(['app/**/*.twig', 'bower.json'], ['templates']);
   gulp.watch(srcFilesPaths, ['modules']);
   gulp.watch(['app/fonts/**/*', 'bower.json'], ['fonts']);
 });
