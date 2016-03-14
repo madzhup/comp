@@ -3,83 +3,84 @@ import gulpLoadPlugins from 'gulp-load-plugins';
 import browserSync from 'browser-sync';
 import del from 'del';
 import babel from 'rollup-plugin-babel';
-import lazypipe from 'lazypipe';
 import mainBowerFiles from 'main-bower-files';
 
 import proxyMiddleware from 'http-proxy-middleware';
+import runSequence from 'run-sequence';
 
 const $ = gulpLoadPlugins();
 
-const srcFilesPaths = [
-  'app/**/*.js',
-  'app/**/*.less'
-];
-
-const tmpFilesPaths = [
+const injectFilesPaths = [
   '.tmp/**/*.js',
-  '.tmp/**/*.css',
-  '.tmp/**/*.html'
+  '.tmp/**/*.css'
 ];
 
 const bs = browserSync.create('Dev server');
 
-const stylesPipe = lazypipe()
-  .pipe($.sourcemaps.init)
-  .pipe($.less, {
-    paths: ['./']
-  })
-  .pipe($.autoprefixer, {
-    browsers: ['> 1%', 'last 2 versions', 'Firefox ESR']
-  })
-  .pipe($.sourcemaps.write)
-  .pipe(bs.stream, {match: '**/*.css'});
+let changedLayout = false;
 
-const scriptsPipe = lazypipe()
-  .pipe($.rollup, {
-    format: 'umd',
-    moduleName: 'app',
-    sourceMap: true,
-    plugins: [
-      babel({
-        presets: 'es2015-rollup',
-        babelrc: false
-      })
-    ]
-  })
-  .pipe($.sourcemaps.write)
-  .pipe(bs.stream, {match: '**/*.js', once: true});
-
-gulp.task('modules', () => {
-  return gulp.src(srcFilesPaths)
+gulp.task('styles', () => {
+  return gulp.src('app/**/*.less')
     .pipe($.plumber())
-    .pipe($.changed('.tmp', {
-      extension: '.css'
+    .pipe($.changed('.tmp', {extension: '.css'}))
+    .pipe($.sourcemaps.init())
+    .pipe($.less({
+      paths: ['./']
     }))
-    .pipe($.if('*.js', scriptsPipe()))
-    .pipe($.if('*.less', stylesPipe()))
-    .pipe(gulp.dest('.tmp'));
+    .pipe($.autoprefixer({
+      browsers: ['> 1%', 'last 2 versions', 'Firefox ESR']
+    }))
+    .pipe($.sourcemaps.write())
+    .pipe(gulp.dest('.tmp'))
+    .pipe(bs.stream());
+});
+
+gulp.task('scripts', () => {
+  return gulp.src('app/modules/main/main.js')
+    .pipe($.plumber())
+    .pipe($.rollup({
+      format: 'umd',
+      moduleName: 'app',
+      sourceMap: true,
+      plugins: [
+        babel({
+          presets: 'es2015-rollup',
+          babelrc: false
+        })
+      ]
+    }))
+    .pipe($.sourcemaps.write())
+    .pipe(gulp.dest('.tmp'))
+    .pipe(bs.stream());
 });
 
 gulp.task('templates', () => {
-  let modules = gulp.src(tmpFilesPaths, {read: false});
+  return gulp.src(['app/pages/**/*.twig'])
+    .pipe($.plumber())
+    .pipe($.twig({
+      data: {
+        injectPath: '.tmp'
+      }
+    }))
+    .pipe(gulp.dest('.tmp'))
+    .pipe(bs.stream());
+});
+
+gulp.task('inject', () => {
+  let modules = gulp.src(injectFilesPaths, {read: false});
   let bowerFiles = gulp.src(mainBowerFiles(), {read: false});
 
-  return gulp.src('app/pages/**/*.twig')
-    .pipe($.plumber())
-    .pipe($.changed('.tmp'))
-    .pipe($.debug())
-    .pipe($.twig())
+  return gulp.src(['app/_partials/scripts.twig', 'app/_partials/styles.twig'])
     .pipe($.inject(modules, {ignorePath: '.tmp'}))
     .pipe($.inject(bowerFiles, {name: 'bower'}))
-    .pipe(gulp.dest('.tmp'))
-    .pipe(bs.stream({once: true}));
+    .pipe(gulp.dest('.tmp/_partials'));
 });
 
-gulp.task('prepare', ['modules'], () => {
-  return gulp.start('templates');
+gulp.task('modules', (cb) => {
+  runSequence(['styles', 'scripts'], 'inject', 'templates', cb);
 });
 
-gulp.task('html', ['templates'], () => {
+gulp.task('html', () => {
   return gulp.src('.tmp/*.html')
     .pipe($.useref({searchPath: ['.tmp', 'app', '.']}))
     .pipe($.if('*.js', $.uglify()))
@@ -130,7 +131,7 @@ gulp.task('nodemon', (cb) => {
   }).once('start', cb);
 });
 
-gulp.task('serve', ['nodemon', 'prepare', 'fonts'], () => {
+gulp.task('serve', ['nodemon', 'modules', 'fonts'], (cb) => {
   bs.init({
     notify: false,
     open: false,
@@ -144,8 +145,18 @@ gulp.task('serve', ['nodemon', 'prepare', 'fonts'], () => {
     }
   });
 
-  gulp.watch(['app/**/*.twig', 'bower.json'], ['templates']);
-  gulp.watch(srcFilesPaths, ['modules']);
+  gulp.watch([
+    'app/**/*.{html,less,js}',
+  ]).on('change', (event) => {
+    if (event.type === 'added' || event.type === 'deleted') {
+      gulp.start('inject');
+    }
+  });
+
+  gulp.watch('app/**/*.twig', ['templates']);
+  gulp.watch('app/**/*.less', ['styles']);
+  gulp.watch('app/**/*.js', ['scripts']);
+  gulp.watch('bower.json', ['inject']);
   gulp.watch(['app/fonts/**/*', 'bower.json'], ['fonts']);
 });
 
